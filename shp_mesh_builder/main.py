@@ -64,7 +64,6 @@ class GridBuilder:
         poly.AddGeometry(ring)
         return poly
 
-    @staticmethod
     def create_empty_shp(self, path, prj, geometry=ogr.wkbPolygon):
         if os.path.exists(os.path.dirname(path)):
             datasource = self.driver.CreateDataSource(path)
@@ -95,26 +94,35 @@ class GridBuilder:
         del layer
         del source
 
-    def intersection(self, grid_path, target_path):
+    def intersection(self, grid_path, shp_path, target_path):
         grid_source = self.driver.Open(grid_path, 1)
         grid_layer = grid_source.GetLayer()
 
-        target_source = self.driver.Open(target_path, 1)
+        shp_source = self.driver.Open(shp_path, 1)
+        shp_layer = shp_source.GetLayer()
+
+        #здесь должно быть определение типа геометрии слоя
+
+        self.create_empty_shp(target_path, self.prj)
+        target_source = self.driver.Open(target_path,1)
         target_layer = target_source.GetLayer()
 
         for feature1 in grid_layer:
             geom1 = feature1.GetGeometryRef()
             attribute1 = feature1.GetField('Name')
-            for feature2 in target_layer:
+            for feature2 in shp_layer:
                 geom2 = feature2.GetGeometryRef()
                 # select only the intersections
                 if geom2.Intersects(geom1):
+                    print('ok')
                     intersection = geom2.Intersection(geom1)
-                    dstfeature = ogr.Feature(dstlayer.GetLayerDefn())
+                    dstfeature = ogr.Feature(target_layer.GetLayerDefn())
                     dstfeature.SetGeometry(intersection)
                     dstfeature.setField(attribute1)
-                    dstfeature.setField(attribute2)
-                    dstfeature.Destroy()
+                    del dstfeature
+            shp_layer.ResetReading()
+
+        del grid_source, shp_source, target_source, grid_layer, shp_layer, target_layer
 
 
 
@@ -131,6 +139,22 @@ def test_main():
     path = r"C:\Users\kotov\Documents\github_kot\swd\shp_mesh_builder\data\testing\setka.shp"
     grid.create_grid(path)
 
+def test_intersection():
+    driver = ogr.GetDriverByName("ESRI Shapefile")
+    shppath = r"C:\Users\kotov\Documents\github_kot\swd\shp_mesh_builder\data\poly_wgs84.shp"
+    source = driver.Open(shppath)
+    layer = source.GetLayer()
+    prj = layer.GetSpatialRef()
+    extent = layer.GetExtent()
+
+    grid = GridBuilder(prj=prj, extent=extent, step_x=10, step_y=10)
+
+    path = r"C:\Users\kotov\Documents\github_kot\swd\shp_mesh_builder\data\testing\setka.shp"
+
+    inter = r"C:\Users\kotov\Documents\github_kot\swd\shp_mesh_builder\data\testing\inter.shp"
+
+    grid.intersection(path, shppath, inter)
+
 
 if __name__=='__main__':
-    test_main()
+    test_intersection()
