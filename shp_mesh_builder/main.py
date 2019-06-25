@@ -60,7 +60,6 @@ class GridBuilder:
         ring.AddPoint(x4, y4)
         ring.AddPoint(x1, y1)
 
-        # Create polygon #1
         poly = ogr.Geometry(ogr.wkbPolygon)
         poly.AddGeometry(ring)
         return poly
@@ -72,7 +71,6 @@ class GridBuilder:
         else:
             raise ValueError("Path doesn't exist")
 
-        # Add the fields we're interested in
         field_name = ogr.FieldDefn("Name", ogr.OFTString)
         field_name.SetWidth(24)
         layer.CreateField(field_name)
@@ -102,11 +100,10 @@ class GridBuilder:
 
         shp_source = self.driver.Open(shp_path, 1)
         shp_layer = shp_source.GetLayer()
+        shp_geom_type = shp_layer.GetGeomType()
 
-        #здесь должно быть определение типа геометрии слоя
-
-        self.create_empty_shp(target_path, self.prj)
-        target_source = self.driver.Open(target_path,1)
+        self.create_empty_shp(target_path, self.prj, geometry=shp_geom_type)
+        target_source = self.driver.Open(target_path, 1)
         target_layer = target_source.GetLayer()
 
         for feature1 in grid_layer:
@@ -114,7 +111,6 @@ class GridBuilder:
             attribute1 = feature1.GetField('Name')
             for feature2 in shp_layer:
                 geom2 = feature2.GetGeometryRef()
-                # select only the intersections
                 if geom1.Intersect(geom2):
                     intersection = geom2.Intersection(geom1)
                     dstfeature = ogr.Feature(target_layer.GetLayerDefn())
@@ -127,9 +123,7 @@ class GridBuilder:
         del grid_source, shp_source, target_source, grid_layer, shp_layer, target_layer
 
 
-
-
-def test_main():
+def test_grid():
     driver = ogr.GetDriverByName("ESRI Shapefile")
     source = driver.Open(r"C:\Users\kotov\Documents\github_kot\swd\shp_mesh_builder\data\poly_wgs84.shp")
     layer = source.GetLayer()
@@ -140,6 +134,7 @@ def test_main():
 
     path = r"C:\Users\kotov\Documents\github_kot\swd\shp_mesh_builder\data\testing\setka.shp"
     grid.create_grid(path)
+
 
 def test_intersection():
     driver = ogr.GetDriverByName("ESRI Shapefile")
@@ -159,5 +154,5 @@ def test_intersection():
     grid.intersection(path, shppath, inter)
 
 
-if __name__=='__main__':
+if __name__ == '__main__':
     test_intersection()
