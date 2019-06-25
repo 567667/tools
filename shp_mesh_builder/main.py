@@ -58,6 +58,7 @@ class GridBuilder:
         ring.AddPoint(x2, y2)
         ring.AddPoint(x3, y3)
         ring.AddPoint(x4, y4)
+        ring.AddPoint(x1, y1)
 
         # Create polygon #1
         poly = ogr.Geometry(ogr.wkbPolygon)
@@ -84,10 +85,11 @@ class GridBuilder:
         source = self.driver.Open(path, 1)
         layer = source.GetLayer()
 
-        for grid_poly in self.grid_points():
+        for i, grid_poly in enumerate(self.grid_points()):
             featureDefn = layer.GetLayerDefn()
             feature = ogr.Feature(featureDefn)
             feature.SetGeometry(self.polygon(*grid_poly))
+            feature.SetField("Name", str(i))
             layer.CreateFeature(feature)
             del feature
 
@@ -113,12 +115,12 @@ class GridBuilder:
             for feature2 in shp_layer:
                 geom2 = feature2.GetGeometryRef()
                 # select only the intersections
-                if geom2.Intersects(geom1):
-                    print('ok')
+                if geom1.Intersect(geom2):
                     intersection = geom2.Intersection(geom1)
                     dstfeature = ogr.Feature(target_layer.GetLayerDefn())
                     dstfeature.SetGeometry(intersection)
-                    dstfeature.setField(attribute1)
+                    dstfeature.SetField('Name', attribute1)
+                    target_layer.CreateFeature(dstfeature)
                     del dstfeature
             shp_layer.ResetReading()
 
@@ -141,7 +143,7 @@ def test_main():
 
 def test_intersection():
     driver = ogr.GetDriverByName("ESRI Shapefile")
-    shppath = r"C:\Users\kotov\Documents\github_kot\swd\shp_mesh_builder\data\poly_wgs84.shp"
+    shppath = r"C:\Users\kotov\Documents\github_kot\swd\shp_mesh_builder\data\point_wgs84.shp"
     source = driver.Open(shppath)
     layer = source.GetLayer()
     prj = layer.GetSpatialRef()
@@ -153,6 +155,7 @@ def test_intersection():
 
     inter = r"C:\Users\kotov\Documents\github_kot\swd\shp_mesh_builder\data\testing\inter.shp"
 
+    grid.create_grid(path)
     grid.intersection(path, shppath, inter)
 
 
