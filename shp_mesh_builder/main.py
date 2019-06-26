@@ -1,4 +1,5 @@
 import os
+import math
 from osgeo import ogr, osr
 
 
@@ -83,11 +84,14 @@ class GridBuilder:
         source = self.driver.Open(path, 1)
         layer = source.GetLayer()
 
-        for i, grid_poly in enumerate(self.grid_points()):
+        for grid_poly in self.grid_points():
+            name = Nomenklatura(grid_poly[0], grid_poly[1])
+            namelist = name.m_100k()
+
             featureDefn = layer.GetLayerDefn()
             feature = ogr.Feature(featureDefn)
             feature.SetGeometry(self.polygon(*grid_poly))
-            feature.SetField("Name", str(i))
+            feature.SetField("Name", namelist[0])
             layer.CreateFeature(feature)
             del feature
 
@@ -123,6 +127,68 @@ class GridBuilder:
         del grid_source, shp_source, target_source, grid_layer, shp_layer, target_layer
 
 
+class Nomenklatura:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+
+    def m_1mln(self):
+        storage_1mln = {0: 'A',
+                   1: 'B',
+                   2: 'C',
+                   3: 'D',
+                   4: 'E',
+                   5: 'F',
+                   6: 'G',
+                   7: 'H',
+                   8: 'I',
+                   9: 'J',
+                   10: 'K',
+                   11: 'L',
+                   12: 'M',
+                   13: 'N',
+                   14: 'O',
+                   15: 'P',
+                   16: 'Q',
+                   17: 'R',
+                   18: 'S',
+                   19: 'T',
+                   20: 'U',
+                   21: 'V',
+                   22: 'Z'}
+
+        y_1mln = math.fabs(self.y // 4)
+        #if self.y % 4 == 0:
+        #    y_1mln -= 1
+        x_1mln = (180 + self.x) // 6 + 1
+
+        list_boundary = (self.x // 6 * 6,
+                         self.y // 4 * 4 + 4,
+                         self.x // 6 * 6 + 6,
+                         self.y // 4 * 4)
+
+        return ['{}-{}'.format(storage_1mln[y_1mln], int(x_1mln)), list_boundary]
+
+    def m_100k(self):
+        name_1mln, boundary = self.m_1mln()
+
+        y_line = (boundary[1]-self.y) // (20/60)
+        x_line = (self.x-boundary[0]) // (30/60)
+        n = (y_line * 12 - 12) + x_line
+
+
+
+        list_boundary = (self.x // (30/60), self.y // (20/60) + (20/60), self.x // (30/60) + (30/60), self.y // (20/60))
+
+        print(self.x, self.y, '{}-{}'.format(name_1mln, int(n)))
+        return ['{}-{}'.format(name_1mln, int(n)), list_boundary]
+
+    def m_50k(self):
+        pass
+
+
+
+
 def test_grid():
     driver = ogr.GetDriverByName("ESRI Shapefile")
     source = driver.Open(r"C:\Users\kotov\Documents\github_kot\swd\shp_mesh_builder\data\poly_wgs84.shp")
@@ -138,13 +204,13 @@ def test_grid():
 
 def test_intersection():
     driver = ogr.GetDriverByName("ESRI Shapefile")
-    shppath = r"C:\Users\kotov\Documents\github_kot\swd\shp_mesh_builder\data\point_wgs84.shp"
+    shppath = r"C:\Users\kotov\Documents\github_kot\swd\shp_mesh_builder\data\poly_wgs84.shp"
     source = driver.Open(shppath)
     layer = source.GetLayer()
     prj = layer.GetSpatialRef()
     extent = layer.GetExtent()
 
-    grid = GridBuilder(prj=prj, extent=extent, step_x=10, step_y=10)
+    grid = GridBuilder(prj=prj, extent=extent, step_x=30/60, step_y=20/60)
 
     path = r"C:\Users\kotov\Documents\github_kot\swd\shp_mesh_builder\data\testing\setka.shp"
 
