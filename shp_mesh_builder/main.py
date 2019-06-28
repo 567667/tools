@@ -2,18 +2,20 @@ import os
 import math
 from osgeo import ogr, osr
 
+import time
+
 
 class GridBuilder:
     def __init__(self,
                  prj: osr.SpatialReference,
                  extent: tuple,
-                 step_x=1,
-                 step_y=1,
+                 scale: int,
                  driver=ogr.GetDriverByName("ESRI Shapefile")):
         self.prj = prj
         self.extent = extent
-        self.step_x = step_x
-        self.step_y = step_y
+        self.scale = scale
+        self.step_x = Nomenklatura.scales(scale)[0]
+        self.step_y = Nomenklatura.scales(scale)[1]
         self.driver = driver
 
     def grid_points(self):
@@ -85,8 +87,8 @@ class GridBuilder:
         layer = source.GetLayer()
 
         for grid_poly in self.grid_points():
-            name = Nomenklatura(grid_poly[0], grid_poly[1])
-            namelist = name.m_100k()
+            name = Nomenklatura((grid_poly[0]+grid_poly[4])/2, (grid_poly[1]+grid_poly[5])/2)
+            namelist = name.get_nomenklatura(self.scale)
 
             featureDefn = layer.GetLayerDefn()
             feature = ogr.Feature(featureDefn)
@@ -132,6 +134,22 @@ class Nomenklatura:
         self.x = x
         self.y = y
 
+    @classmethod
+    def scales(cls, scale):
+        SCALES = {1000000: (6,4),
+                   100000: (30/60, 20/60),
+                    50000: (15/60, 10/60),
+                    25000: (7.5/60, 5/60)}
+
+        return SCALES[scale]
+
+    def get_nomenklatura(self, scale):
+        scale_method = {1000000: self.m_1mln(),
+                  100000: self.m_100k(),
+                  50000: self.m_50k(),
+                  25000: self.m_25k()}
+        return scale_method[scale]
+
     def m_1mln(self):
         storage_1mln = {0: 'A',
                    1: 'B',
@@ -174,19 +192,63 @@ class Nomenklatura:
 
         y_line = (boundary[1]-self.y) // (20/60)
         x_line = (self.x-boundary[0]) // (30/60)
-        n = (y_line * 12 - 12) + x_line
+        n = (y_line * 12 + 1) + x_line
 
+        list_boundary = (self.x // (30/60) * (30/60),
+                         self.y // (20/60) * (20/60) + (20/60),
+                         self.x // (30/60) * (30/60) + (30/60),
+                         self.y // (20/60) * (20/60))
 
-
-        list_boundary = (self.x // (30/60), self.y // (20/60) + (20/60), self.x // (30/60) + (30/60), self.y // (20/60))
-
-        print(self.x, self.y, '{}-{}'.format(name_1mln, int(n)))
+        #print(self.x, self.y, '{}-{}'.format(name_1mln, int(n)))
         return ['{}-{}'.format(name_1mln, int(n)), list_boundary]
 
     def m_50k(self):
-        pass
+        name_100k, boundary = self.m_100k()
 
+        mid_x = (boundary[2] + boundary[0]) / 2
+        mid_y = (boundary[3] + boundary[1]) / 2
 
+        if self.x < mid_x and self.y > mid_y:
+            litera = 'A'
+        elif self.x > mid_x and self.y > mid_y:
+            litera = 'Б'
+        elif self.x < mid_x and self.y < mid_y:
+            litera = 'В'
+        elif self.x > mid_x and self.y < mid_y:
+            litera = 'Г'
+        else:
+            litera = '?'
+
+        list_boundary = (self.x // (15 / 60) * (15 / 60),
+                         self.y // (10 / 60) * (10 / 60) + (10 / 60),
+                         self.x // (15 / 60) * (15 / 60) + (15 / 60),
+                         self.y // (10 / 60) * (10 / 60))
+
+        return ['{}-{}'.format(name_100k, litera), list_boundary]
+
+    def m_25k(self):
+        name_50k, boundary = self.m_50k()
+
+        mid_x = (boundary[2] + boundary[0]) / 2
+        mid_y = (boundary[3] + boundary[1]) / 2
+
+        if self.x < mid_x and self.y > mid_y:
+            litera = 'а'
+        elif self.x > mid_x and self.y > mid_y:
+            litera = 'б'
+        elif self.x < mid_x and self.y < mid_y:
+            litera = 'в'
+        elif self.x > mid_x and self.y < mid_y:
+            litera = 'г'
+        else:
+            litera = '?'
+
+        list_boundary = (self.x // (7.5 / 60) * (7.5 / 60),
+                         self.y // (5 / 60) * (5 / 60) + (5 / 60),
+                         self.x // (7.5 / 60) * (7.5 / 60) + (7.5 / 60),
+                         self.y // (5 / 60) * (5 / 60))
+
+        return ['{}-{}'.format(name_50k, litera), list_boundary]
 
 
 def test_grid():
@@ -196,7 +258,7 @@ def test_grid():
     prj = layer.GetSpatialRef()
     extent = layer.GetExtent()
 
-    grid = GridBuilder(prj=prj, extent=extent, step_x=10, step_y=10)
+    grid = GridBuilder(prj=prj, extent=extent, scale=25000)
 
     path = r"C:\Users\kotov\Documents\github_kot\swd\shp_mesh_builder\data\testing\setka.shp"
     grid.create_grid(path)
@@ -210,7 +272,7 @@ def test_intersection():
     prj = layer.GetSpatialRef()
     extent = layer.GetExtent()
 
-    grid = GridBuilder(prj=prj, extent=extent, step_x=30/60, step_y=20/60)
+    grid = GridBuilder(prj=prj, extent=extent, scale=25000)
 
     path = r"C:\Users\kotov\Documents\github_kot\swd\shp_mesh_builder\data\testing\setka.shp"
 
@@ -219,6 +281,11 @@ def test_intersection():
     grid.create_grid(path)
     grid.intersection(path, shppath, inter)
 
+def test_vocab():
+    print(Nomenklatura.scales(1000000))
+
 
 if __name__ == '__main__':
+    cur_time = time.time()
     test_intersection()
+    print('Process time:', time.time() - cur_time)
