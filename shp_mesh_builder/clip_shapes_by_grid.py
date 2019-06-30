@@ -21,7 +21,6 @@ class GridBuilder:
         :param extent: Polygonal extent of shapefile with 2 coordinates (upper-left, lower-right): tuple.
         :param scale: Scale denominator [1000000, 100000, 50000, 25000]: int.
         :param driver: Driver for vector layer: osgeo.ogr object
-        :param target_crs: Target CRS "Pulkovo 1942": osr.SpatialReference.
         """
         self.crs = crs
         self.extent = extent
@@ -38,7 +37,7 @@ class GridBuilder:
         |          |
         |          |
         x4y4-----x3y3
-        return: Generator.
+        return: Generator
         """
 
         extent_x1, extent_y1 = self.reproject_point(self.crs, self.extent[0], self.extent[3])
@@ -67,7 +66,10 @@ class GridBuilder:
 
     @staticmethod
     def polygon(x1, y1, x2, y2, x3, y3, x4, y4):
-        """Create polygon geometry by coordinates."""
+        """
+        Create polygon geometry by coordinates.
+        return: ogr.Geometry
+        """
 
         ring = ogr.Geometry(ogr.wkbLinearRing)
         ring.AddPoint(x1, y1)
@@ -80,16 +82,15 @@ class GridBuilder:
         poly.AddGeometry(ring)
         return poly
 
-    def reproject(self, source_layer, geometry):
+    def reproject(self, source_crs, geometry):
         """
-        Reproject geometry from source CRS to geographical coordinates (Pulkovo 1942)
-        :param source_layer:
+        Reproject geometry from source CRS to geographic coordinates (EPSG:4284 Pulkovo 1942)
+        :param source_crs:
         :param geometry:
-        :return:
+        :return: ogr.Geometry
         """
-        source_crs = source_layer.GetSpatialRef()
         target_crs = osr.SpatialReference()
-        target_crs.ImportFromProj4("+proj=longlat +ellps=krass +no_defs ")
+        target_crs.ImportFromProj4("+proj=longlat +ellps=krass +towgs84=23.92,-141.27,-80.9,0,0.35,0.82,-0.12 +no_defs")
 
         transform = osr.CoordinateTransformation(source_crs, target_crs)
         geometry.Transform(transform)
@@ -97,8 +98,15 @@ class GridBuilder:
         return geometry
 
     def reproject_point(self, source_crs, x, y):
+        """
+        Reproject x, y from source CRS to geographic coordinates (EPSG:4284 Pulkovo 1942)
+        :param source_crs:
+        :param geometry:
+        :return: x, y: float
+        """
+
         target_crs = osr.SpatialReference()
-        target_crs.ImportFromProj4("+proj=longlat +ellps=krass +no_defs ")
+        target_crs.ImportFromProj4("+proj=longlat +ellps=krass +towgs84=23.92,-141.27,-80.9,0,0.35,0.82,-0.12 +no_defs")
 
         point = ogr.Geometry(ogr.wkbPoint)
         point.AddPoint(x, y)
@@ -119,7 +127,7 @@ class GridBuilder:
         if os.path.exists(os.path.dirname(path)):
             datasource = self.driver.CreateDataSource(path)
             target_crs = osr.SpatialReference()
-            target_crs.ImportFromProj4("+proj=longlat +ellps=krass +no_defs ")
+            target_crs.ImportFromProj4("+proj=longlat +ellps=krass +towgs84=23.92,-141.27,-80.9,0,0.35,0.82,-0.12 +no_defs")
             layer = datasource.CreateLayer('grid_layer',target_crs,geometry,options=['ENCODING=UTF-8'])
         else:
             raise ValueError("Path doesn't exist")
@@ -199,14 +207,14 @@ class GridBuilder:
 
         shp_source = self.driver.Open(shp_path, 1)
         shp_layer = shp_source.GetLayer()
+        shp_crs = shp_layer.GetSpatialRef()
         shp_geom_type = shp_layer.GetGeomType()
 
         for feature1 in grid_layer:
-            geom1 = self.reproject(shp_layer, feature1.GetGeometryRef())
+            geom1 = feature1.GetGeometryRef()
             attribute1 = feature1.GetField('Razgraphka')
-
             for feature2 in shp_layer:
-                geom2 = feature2.GetGeometryRef()
+                geom2 = self.reproject(shp_crs, feature2.GetGeometryRef())
                 if geom1.Intersect(geom2):
                     intersection = geom2.Intersection(geom1)
 
@@ -429,7 +437,7 @@ class Nomenklatura:
 
 def main():
     """
-    Main function for command line utility.
+    Main function for command line utility. 3 required arguments - -scale, -source_shp, -out.
     :return: result.
     """
 
@@ -438,7 +446,7 @@ def main():
         parser.add_argument('-scale',
                             required=True, nargs='+',
                             help='Scale denominator [1000000, 100000, 50000, 25000].')
-        parser.add_argument('-source_shp',
+        parser.add_argument('-shp',
                             required=True, nargs='+',
                             help='Path to source shapefile.')
         parser.add_argument('-out',
@@ -451,11 +459,11 @@ def main():
             p.print_usage()
             return
 
-        return [p.scale, p.source_shp, p.out]
+        return [p.scale, p.shp, p.out]
 
-    scale, source_shp, out_directory = arguments()
+    scale, shp, out_directory = arguments()
     cur_time = time.time()
-    GridBuilder.get_shapes_by_grid(int(scale[0]), str(source_shp[0]), str(out_directory[0]))
+    GridBuilder.get_shapes_by_grid(int(scale[0]), str(shp[0]), str(out_directory[0]))
     print('Process time:', round(time.time() - cur_time, 2), 'sec')
 
 
