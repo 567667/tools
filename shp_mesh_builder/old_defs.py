@@ -123,3 +123,8 @@ def test_main():
 
 if __name__ == '__main__':
     test_main()
+
+    for i in range(0, layer_defn.GetFieldCount()):
+        print(layer_defn.GetFieldDefn(85).GetNameRef(), feature2.GetField(85))
+        dstfeature.SetField(layer_defn.GetFieldDefn(i).GetNameRef(), feature2.GetField(i))
+    target_layer.CreateFeature(dstfeature)

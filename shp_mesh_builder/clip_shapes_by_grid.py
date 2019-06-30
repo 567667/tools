@@ -1,8 +1,9 @@
+import argparse
 import os
 import math
-from osgeo import ogr, osr
-
+import pathlib
 import time
+from osgeo import ogr, osr
 
 
 class GridBuilder:
@@ -33,13 +34,13 @@ class GridBuilder:
         x_start = (x1 // self.step_x) * self.step_x
         y_start = (y1 // self.step_y) * self.step_y + self.step_y
         x_end = (x2 // self.step_x) * self.step_x + self.step_x
-        y_end = (y2 // self.step_y) * self.step_y + self.step_y
+        y_end = (y2 // self.step_y) * self.step_y
 
         print('grid boundary: ', x_start, y_start, x_end, y_end)
 
         _x, _y = x_start, y_start
 
-        while _x <= x_end and _y >= y_end:
+        while _x <= x_end and _y > y_end:
             x1, y1 = _x, _y
             x2, y2 = _x + self.step_x, _y
             x3, y3 = _x + self.step_x, _y - self.step_y
@@ -67,22 +68,23 @@ class GridBuilder:
         poly.AddGeometry(ring)
         return poly
 
-    def create_empty_shp(self, path, prj, geometry=ogr.wkbPolygon):
+    def create_empty_shp(self, path, prj, geometry=ogr.wkbPolygon, nom_field=False):
         if os.path.exists(os.path.dirname(path)):
             datasource = self.driver.CreateDataSource(path)
             layer = datasource.CreateLayer('grid_layer', prj, geometry, options=['ENCODING=UTF-8'])
         else:
             raise ValueError("Path doesn't exist")
 
-        field_name = ogr.FieldDefn("Name", ogr.OFTString)
-        field_name.SetWidth(24)
-        layer.CreateField(field_name)
+        if nom_field:
+            field_name = ogr.FieldDefn("Razgraphka", ogr.OFTString)
+            field_name.SetWidth(24)
+            layer.CreateField(field_name)
 
         del layer
         del datasource
 
     def create_grid(self, path):
-        self.create_empty_shp(path, self.prj)
+        self.create_empty_shp(path, self.prj, nom_field=True)
         source = self.driver.Open(path, 1)
         layer = source.GetLayer()
 
@@ -93,14 +95,14 @@ class GridBuilder:
             featureDefn = layer.GetLayerDefn()
             feature = ogr.Feature(featureDefn)
             feature.SetGeometry(self.polygon(*grid_poly))
-            feature.SetField("Name", namelist[0])
+            feature.SetField("Razgraphka", namelist[0])
             layer.CreateFeature(feature)
             del feature
 
         del layer
         del source
 
-    def intersection(self, grid_path, shp_path, target_path):
+    def __intersection_to_file(self, grid_path, shp_path, target_path):
         grid_source = self.driver.Open(grid_path, 1)
         grid_layer = grid_source.GetLayer()
 
@@ -114,19 +116,106 @@ class GridBuilder:
 
         for feature1 in grid_layer:
             geom1 = feature1.GetGeometryRef()
-            attribute1 = feature1.GetField('Name')
+            attribute1 = feature1.GetField('Razgraphka')
             for feature2 in shp_layer:
                 geom2 = feature2.GetGeometryRef()
                 if geom1.Intersect(geom2):
                     intersection = geom2.Intersection(geom1)
                     dstfeature = ogr.Feature(target_layer.GetLayerDefn())
                     dstfeature.SetGeometry(intersection)
-                    dstfeature.SetField('Name', attribute1)
+                    dstfeature.SetField('Razgraphka', attribute1)
                     target_layer.CreateFeature(dstfeature)
                     del dstfeature
             shp_layer.ResetReading()
 
         del grid_source, shp_source, target_source, grid_layer, shp_layer, target_layer
+
+    def intersection_to_dirs(self, grid_path, shp_path, target_path):
+        grid_source = self.driver.Open(grid_path, 1)
+        grid_layer = grid_source.GetLayer()
+
+        shp_source = self.driver.Open(shp_path, 1)
+        shp_layer = shp_source.GetLayer()
+        shp_geom_type = shp_layer.GetGeomType()
+
+        for feature1 in grid_layer:
+            geom1 = feature1.GetGeometryRef()
+            attribute1 = feature1.GetField('Razgraphka')
+
+            path = pathlib.Path(target_path)
+            target_dir = path / attribute1
+            if not target_dir.is_dir():
+                target_dir.mkdir(parents=True, exist_ok=True)
+
+            for feature2 in shp_layer:
+                geom2 = feature2.GetGeometryRef()
+                if geom1.Intersect(geom2):
+                    intersection = geom2.Intersection(geom1)
+
+                    target_shp_dir = target_dir / str(attribute1+'_'+os.path.basename(shp_path))
+
+                    if not os.path.exists(str(target_shp_dir)):
+                        print(str(target_shp_dir))
+                        self.create_empty_shp(str(target_shp_dir),
+                                              self.prj,
+                                              geometry=shp_geom_type)
+
+                        target_source = self.driver.Open(str(target_shp_dir), 1)
+                        target_layer = target_source.GetLayer()
+
+                        shp_layer_defn = shp_layer.GetLayerDefn()
+                        for i in range(0, shp_layer_defn.GetFieldCount()):
+                            field_defn = shp_layer_defn.GetFieldDefn(i)
+                            target_layer.CreateField(field_defn)
+                    else:
+                        target_source = self.driver.Open(str(target_shp_dir), 1)
+                        target_layer = target_source.GetLayer()
+
+                    layer_defn = target_layer.GetLayerDefn()
+                    dstfeature = ogr.Feature(layer_defn)
+                    dstfeature.SetGeometry(intersection)
+
+                    for i in range(layer_defn.GetFieldCount()):
+                        dstfeature.SetField(layer_defn.GetFieldDefn(i).GetNameRef(), feature2.GetField(i))
+                    target_layer.CreateFeature(dstfeature)
+
+                    del dstfeature
+                    del target_layer
+                    del target_source
+
+            shp_layer.ResetReading()
+
+        del grid_source, shp_source, grid_layer, shp_layer
+
+    @staticmethod
+    def write_fields_to_shp(feature2, dstfeature, source_layer, target_layer):
+        layer_defn = source_layer.GetLayerDefn()
+        for i in range(0, layer_defn.GetFieldCount()):
+            field_defn = layer_defn.GetFieldDefn(i)
+            target_layer.CreateField(field_defn)
+
+        for i in range(0, layer_defn.GetFieldCount()):
+
+            dstfeature.SetField(layer_defn.GetFieldDefn(i).GetNameRef(), feature2.GetField(i))
+            print('ok')
+        target_layer.CreateFeature(dstfeature)
+
+        del dstfeature
+
+    @classmethod
+    def get_shapes_by_grid(cls, scale, source_path, target_dir):
+        driver = ogr.GetDriverByName("ESRI Shapefile")
+        source = driver.Open(source_path)
+        layer = source.GetLayer()
+        prj = layer.GetSpatialRef()
+        extent = layer.GetExtent()
+
+        grid = GridBuilder(prj=prj, extent=extent, scale=scale)
+        grid_name = 'grid' + str(scale) + '.shp'
+        grid_path = os.path.join(target_dir, grid_name)
+
+        grid.create_grid(grid_path)
+        grid.intersection_to_dirs(grid_path, source_path, target_dir)
 
 
 class Nomenklatura:
@@ -136,7 +225,7 @@ class Nomenklatura:
 
     @classmethod
     def scales(cls, scale):
-        SCALES = {1000000: (6,4),
+        SCALES = {1000000: (6, 4),
                    100000: (30/60, 20/60),
                     50000: (15/60, 10/60),
                     25000: (7.5/60, 5/60)}
@@ -151,33 +240,31 @@ class Nomenklatura:
         return scale_method[scale]
 
     def m_1mln(self):
-        storage_1mln = {0: 'A',
-                   1: 'B',
-                   2: 'C',
-                   3: 'D',
-                   4: 'E',
-                   5: 'F',
-                   6: 'G',
-                   7: 'H',
-                   8: 'I',
-                   9: 'J',
-                   10: 'K',
-                   11: 'L',
-                   12: 'M',
-                   13: 'N',
-                   14: 'O',
-                   15: 'P',
-                   16: 'Q',
-                   17: 'R',
-                   18: 'S',
-                   19: 'T',
-                   20: 'U',
-                   21: 'V',
-                   22: 'Z'}
+        storage_1mln = { 0: 'A',
+                         1: 'B',
+                         2: 'C',
+                         3: 'D',
+                         4: 'E',
+                         5: 'F',
+                         6: 'G',
+                         7: 'H',
+                         8: 'I',
+                         9: 'J',
+                        10: 'K',
+                        11: 'L',
+                        12: 'M',
+                        13: 'N',
+                        14: 'O',
+                        15: 'P',
+                        16: 'Q',
+                        17: 'R',
+                        18: 'S',
+                        19: 'T',
+                        20: 'U',
+                        21: 'V',
+                        22: 'Z'}
 
         y_1mln = math.fabs(self.y // 4)
-        #if self.y % 4 == 0:
-        #    y_1mln -= 1
         x_1mln = (180 + self.x) // 6 + 1
 
         list_boundary = (self.x // 6 * 6,
@@ -199,7 +286,6 @@ class Nomenklatura:
                          self.x // (30/60) * (30/60) + (30/60),
                          self.y // (20/60) * (20/60))
 
-        #print(self.x, self.y, '{}-{}'.format(name_1mln, int(n)))
         return ['{}-{}'.format(name_1mln, int(n)), list_boundary]
 
     def m_50k(self):
@@ -251,41 +337,32 @@ class Nomenklatura:
         return ['{}-{}'.format(name_50k, litera), list_boundary]
 
 
-def test_grid():
-    driver = ogr.GetDriverByName("ESRI Shapefile")
-    source = driver.Open(r"C:\Users\kotov\Documents\github_kot\swd\shp_mesh_builder\data\poly_wgs84.shp")
-    layer = source.GetLayer()
-    prj = layer.GetSpatialRef()
-    extent = layer.GetExtent()
+def main():
+    def arguments():
+        parser = argparse.ArgumentParser(description='Utility for clipping shapefile by scale grid')
+        parser.add_argument('-scale',
+                            required=True, nargs='+',
+                            help='Scale denominator [1000000, 100000, 50000, 25000].')
+        parser.add_argument('-source_shp',
+                            required=True, nargs='+',
+                            help='Path to source shapefile.')
+        parser.add_argument('-out',
+                            required=True, nargs='+',
+                            help='Directory to export clipped shapefiles')
+        try:
+            p = parser.parse_args()
+        except Exception:
+            p.print_help()
+            p.print_usage()
+            return
 
-    grid = GridBuilder(prj=prj, extent=extent, scale=25000)
+        return [p.scale, p.source_shp, p.out]
 
-    path = r"C:\Users\kotov\Documents\github_kot\swd\shp_mesh_builder\data\testing\setka.shp"
-    grid.create_grid(path)
-
-
-def test_intersection():
-    driver = ogr.GetDriverByName("ESRI Shapefile")
-    shppath = r"C:\Users\kotov\Documents\github_kot\swd\shp_mesh_builder\data\poly_wgs84.shp"
-    source = driver.Open(shppath)
-    layer = source.GetLayer()
-    prj = layer.GetSpatialRef()
-    extent = layer.GetExtent()
-
-    grid = GridBuilder(prj=prj, extent=extent, scale=25000)
-
-    path = r"C:\Users\kotov\Documents\github_kot\swd\shp_mesh_builder\data\testing\setka.shp"
-
-    inter = r"C:\Users\kotov\Documents\github_kot\swd\shp_mesh_builder\data\testing\inter.shp"
-
-    grid.create_grid(path)
-    grid.intersection(path, shppath, inter)
-
-def test_vocab():
-    print(Nomenklatura.scales(1000000))
+    scale, source_shp, out_directory = arguments()
+    cur_time = time.time()
+    GridBuilder.get_shapes_by_grid(int(scale[0]), str(source_shp[0]), str(out_directory[0]))
+    print('Process time:', round(time.time() - cur_time, 2), 'sec')
 
 
 if __name__ == '__main__':
-    cur_time = time.time()
-    test_intersection()
-    print('Process time:', time.time() - cur_time)
+    main()

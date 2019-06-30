@@ -193,7 +193,7 @@ for i in range(sxfsource.GetLayerCount()):
                 write_to_shp(featurew, layerw, poly_shp_name)
 
             if geom_name_feature == 'MULTILINESTRING':
-                 write_to_shp(featurew, layerw, line_shp_name)
+                write_to_shp(featurew, layerw, line_shp_name)
             
             if geom_name_feature == 'MULTIPOINT':
                 write_to_shp(featurew, layerw, point_shp_name)
