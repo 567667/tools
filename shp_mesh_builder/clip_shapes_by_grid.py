@@ -7,11 +7,22 @@ from osgeo import ogr, osr
 
 
 class GridBuilder:
+
+    """
+    Methods to clip shapefile by scale grid.
+    """
+
     def __init__(self,
                  prj: osr.SpatialReference,
                  extent: tuple,
                  scale: int,
                  driver=ogr.GetDriverByName("ESRI Shapefile")):
+        """
+        :param prj: osgeo.osr projection object - osr.SpatialReference.
+        :param extent: Polygonal extent of shapefile with 2 coordinates (upper-left, lower-right) - tuple.
+        :param scale: Scale denominator [1000000, 100000, 50000, 25000] - int.
+        :param driver: osgeo.ogr driver object.
+        """
         self.prj = prj
         self.extent = extent
         self.scale = scale
@@ -20,21 +31,24 @@ class GridBuilder:
         self.driver = driver
 
     def grid_points(self):
-        """
-        Calculate coordinates of polygons for GRID.
+
+        """Generator. Calculate coordinates of each polygon for your grid.
+
         x1y1-----x2y2
         |          |
         |          |
         |          |
         x4y4-----x3y3
+        yield: tuple
         """
-        x1, y1 = self.extent[0], self.extent[3]
-        x2, y2 = self.extent[1], self.extent[2]
 
-        x_start = (x1 // self.step_x) * self.step_x
-        y_start = (y1 // self.step_y) * self.step_y + self.step_y
-        x_end = (x2 // self.step_x) * self.step_x + self.step_x
-        y_end = (y2 // self.step_y) * self.step_y
+        extent_x1, extent_y1 = self.extent[0], self.extent[3]
+        extent_x2, extent_y2 = self.extent[1], self.extent[2]
+
+        x_start = (extent_x1 // self.step_x) * self.step_x
+        y_start = (extent_y1 // self.step_y) * self.step_y + self.step_y
+        x_end = (extent_x2 // self.step_x) * self.step_x + self.step_x
+        y_end = (extent_y2 // self.step_y) * self.step_y
 
         print('grid boundary: ', x_start, y_start, x_end, y_end)
 
@@ -54,9 +68,9 @@ class GridBuilder:
 
     @staticmethod
     def polygon(x1, y1, x2, y2, x3, y3, x4, y4):
-        """
-        Create polygon geometry by coordinates.
-        """
+
+        """Create polygon geometry by coordinates."""
+
         ring = ogr.Geometry(ogr.wkbLinearRing)
         ring.AddPoint(x1, y1)
         ring.AddPoint(x2, y2)
@@ -69,6 +83,16 @@ class GridBuilder:
         return poly
 
     def create_empty_shp(self, path, prj, geometry=ogr.wkbPolygon, nom_field=False):
+
+        """Create empty shapefile.
+
+        :param path: Path to create empty shapefile - str.
+        :param prj: Projection - osgeo.osr object.
+        :param geometry: Type of geometry - ogr object.
+        :param nom_field: Write field "Razgraphka" or not to empty shapefile - bool.
+        return: shapefile
+        """
+
         if os.path.exists(os.path.dirname(path)):
             datasource = self.driver.CreateDataSource(path)
             layer = datasource.CreateLayer('grid_layer', prj, geometry, options=['ENCODING=UTF-8'])
@@ -84,6 +108,13 @@ class GridBuilder:
         del datasource
 
     def create_grid(self, path):
+
+        """Create grid shapefile for source shapefile with your scale denominator.
+
+        :param path: Path for grid-shapefile - str.
+        :return: shapefile
+        """
+
         self.create_empty_shp(path, self.prj, nom_field=True)
         source = self.driver.Open(path, 1)
         layer = source.GetLayer()
@@ -131,6 +162,15 @@ class GridBuilder:
         del grid_source, shp_source, target_source, grid_layer, shp_layer, target_layer
 
     def intersection_to_dirs(self, grid_path, shp_path, target_path):
+
+        """Create shapefiles for each grid cell and move it to named 'Nomenklatura' folders.
+
+        :param grid_path: Path of grid to clip source shapefile - str.
+        :param shp_path: Path of source shapefile to clip - str.
+        :param target_path: Path of directory for new clipped shapefiles - str.
+        :return: clipped shapefiles in named folders.
+        """
+
         grid_source = self.driver.Open(grid_path, 1)
         grid_layer = grid_source.GetLayer()
 
@@ -179,31 +219,23 @@ class GridBuilder:
                         dstfeature.SetField(layer_defn.GetFieldDefn(i).GetNameRef(), feature2.GetField(i))
                     target_layer.CreateFeature(dstfeature)
 
-                    del dstfeature
-                    del target_layer
-                    del target_source
+                    del dstfeature, target_layer, target_source
 
             shp_layer.ResetReading()
 
         del grid_source, shp_source, grid_layer, shp_layer
 
-    @staticmethod
-    def write_fields_to_shp(feature2, dstfeature, source_layer, target_layer):
-        layer_defn = source_layer.GetLayerDefn()
-        for i in range(0, layer_defn.GetFieldCount()):
-            field_defn = layer_defn.GetFieldDefn(i)
-            target_layer.CreateField(field_defn)
-
-        for i in range(0, layer_defn.GetFieldCount()):
-
-            dstfeature.SetField(layer_defn.GetFieldDefn(i).GetNameRef(), feature2.GetField(i))
-            print('ok')
-        target_layer.CreateFeature(dstfeature)
-
-        del dstfeature
-
     @classmethod
     def get_shapes_by_grid(cls, scale, source_path, target_dir):
+
+        """Common method to create new clipped and named shapefiles by source shapefile and scale grid.
+
+        :param scale: Scale denominator [1000000, 100000, 50000, 25000]
+        :param source_path: Path of source shapefile - str.
+        :param target_dir: Directory path for new shapefiles - str.
+        :return: clipped shapefiles in named folders.
+        """
+
         driver = ogr.GetDriverByName("ESRI Shapefile")
         source = driver.Open(source_path)
         layer = source.GetLayer()
@@ -219,6 +251,11 @@ class GridBuilder:
 
 
 class Nomenklatura:
+
+    """
+    Methods to create special names by russian mapping scale series.
+    """
+
     def __init__(self, x, y):
         self.x = x
         self.y = y
