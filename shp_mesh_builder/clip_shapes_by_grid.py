@@ -7,23 +7,23 @@ from osgeo import ogr, osr
 
 
 class GridBuilder:
-
     """
     Methods to clip shapefile by scale grid.
     """
 
     def __init__(self,
-                 prj: osr.SpatialReference,
+                 crs: osr.SpatialReference,
                  extent: tuple,
                  scale: int,
                  driver=ogr.GetDriverByName("ESRI Shapefile")):
         """
-        :param prj: osgeo.osr projection object - osr.SpatialReference.
-        :param extent: Polygonal extent of shapefile with 2 coordinates (upper-left, lower-right) - tuple.
-        :param scale: Scale denominator [1000000, 100000, 50000, 25000] - int.
-        :param driver: osgeo.ogr driver object.
+        :param crs: Source CRS: osr.SpatialReference.
+        :param extent: Polygonal extent of shapefile with 2 coordinates (upper-left, lower-right): tuple.
+        :param scale: Scale denominator [1000000, 100000, 50000, 25000]: int.
+        :param driver: Driver for vector layer: osgeo.ogr object
+        :param target_crs: Target CRS "Pulkovo 1942": osr.SpatialReference.
         """
-        self.prj = prj
+        self.crs = crs
         self.extent = extent
         self.scale = scale
         self.step_x = Nomenklatura.scales(scale)[0]
@@ -31,19 +31,18 @@ class GridBuilder:
         self.driver = driver
 
     def grid_points(self):
-
-        """Generator. Calculate coordinates of each polygon for your grid.
-
+        """
+        Generator. Calculate coordinates of each polygon for your grid.
         x1y1-----x2y2
         |          |
         |          |
         |          |
         x4y4-----x3y3
-        yield: tuple
+        return: Generator.
         """
 
-        extent_x1, extent_y1 = self.extent[0], self.extent[3]
-        extent_x2, extent_y2 = self.extent[1], self.extent[2]
+        extent_x1, extent_y1 = self.reproject_point(self.crs, self.extent[0], self.extent[3])
+        extent_x2, extent_y2 = self.reproject_point(self.crs, self.extent[1], self.extent[2])
 
         x_start = (extent_x1 // self.step_x) * self.step_x
         y_start = (extent_y1 // self.step_y) * self.step_y + self.step_y
@@ -68,7 +67,6 @@ class GridBuilder:
 
     @staticmethod
     def polygon(x1, y1, x2, y2, x3, y3, x4, y4):
-
         """Create polygon geometry by coordinates."""
 
         ring = ogr.Geometry(ogr.wkbLinearRing)
@@ -82,20 +80,47 @@ class GridBuilder:
         poly.AddGeometry(ring)
         return poly
 
-    def create_empty_shp(self, path, prj, geometry=ogr.wkbPolygon, nom_field=False):
+    def reproject(self, source_layer, geometry):
+        """
+        Reproject geometry from source CRS to geographical coordinates (Pulkovo 1942)
+        :param source_layer:
+        :param geometry:
+        :return:
+        """
+        source_crs = source_layer.GetSpatialRef()
+        target_crs = osr.SpatialReference()
+        target_crs.ImportFromProj4("+proj=longlat +ellps=krass +no_defs ")
 
-        """Create empty shapefile.
+        transform = osr.CoordinateTransformation(source_crs, target_crs)
+        geometry.Transform(transform)
 
-        :param path: Path to create empty shapefile - str.
-        :param prj: Projection - osgeo.osr object.
-        :param geometry: Type of geometry - ogr object.
-        :param nom_field: Write field "Razgraphka" or not to empty shapefile - bool.
-        return: shapefile
+        return geometry
+
+    def reproject_point(self, source_crs, x, y):
+        target_crs = osr.SpatialReference()
+        target_crs.ImportFromProj4("+proj=longlat +ellps=krass +no_defs ")
+
+        point = ogr.Geometry(ogr.wkbPoint)
+        point.AddPoint(x, y)
+        transform = osr.CoordinateTransformation(source_crs, target_crs)
+        point.Transform(transform)
+
+        return point.GetX(), point.GetY()
+
+    def create_empty_shp(self, path, geometry=ogr.wkbPolygon, nom_field=False):
+        """
+        Create empty shapefile.
+        :param path: Path to create empty shapefile: str.
+        :param geometry: Type of geometry: ogr object.
+        :param nom_field: Write field "Razgraphka" or not to empty shapefile: bool.
+        return: shapefile.
         """
 
         if os.path.exists(os.path.dirname(path)):
             datasource = self.driver.CreateDataSource(path)
-            layer = datasource.CreateLayer('grid_layer', prj, geometry, options=['ENCODING=UTF-8'])
+            target_crs = osr.SpatialReference()
+            target_crs.ImportFromProj4("+proj=longlat +ellps=krass +no_defs ")
+            layer = datasource.CreateLayer('grid_layer',target_crs,geometry,options=['ENCODING=UTF-8'])
         else:
             raise ValueError("Path doesn't exist")
 
@@ -108,14 +133,13 @@ class GridBuilder:
         del datasource
 
     def create_grid(self, path):
-
-        """Create grid shapefile for source shapefile with your scale denominator.
-
-        :param path: Path for grid-shapefile - str.
-        :return: shapefile
+        """
+        Create grid shapefile for source shapefile with your scale denominator.
+        :param path: Path for grid-shapefile: str.
+        :return: shapefile.
         """
 
-        self.create_empty_shp(path, self.prj, nom_field=True)
+        self.create_empty_shp(path, nom_field=True)
         source = self.driver.Open(path, 1)
         layer = source.GetLayer()
 
@@ -141,7 +165,7 @@ class GridBuilder:
         shp_layer = shp_source.GetLayer()
         shp_geom_type = shp_layer.GetGeomType()
 
-        self.create_empty_shp(target_path, self.prj, geometry=shp_geom_type)
+        self.create_empty_shp(target_path, geometry=shp_geom_type)
         target_source = self.driver.Open(target_path, 1)
         target_layer = target_source.GetLayer()
 
@@ -162,12 +186,11 @@ class GridBuilder:
         del grid_source, shp_source, target_source, grid_layer, shp_layer, target_layer
 
     def intersection_to_dirs(self, grid_path, shp_path, target_path):
-
-        """Create shapefiles for each grid cell and move it to named 'Nomenklatura' folders.
-
-        :param grid_path: Path of grid to clip source shapefile - str.
-        :param shp_path: Path of source shapefile to clip - str.
-        :param target_path: Path of directory for new clipped shapefiles - str.
+        """
+        Create shapefiles for each grid cell and move it to named 'Nomenklatura' folders.
+        :param grid_path: Path of grid to clip source shapefile: str.
+        :param shp_path: Path of source shapefile to clip: str.
+        :param target_path: Path of directory for new clipped shapefiles: str.
         :return: clipped shapefiles in named folders.
         """
 
@@ -179,25 +202,24 @@ class GridBuilder:
         shp_geom_type = shp_layer.GetGeomType()
 
         for feature1 in grid_layer:
-            geom1 = feature1.GetGeometryRef()
+            geom1 = self.reproject(shp_layer, feature1.GetGeometryRef())
             attribute1 = feature1.GetField('Razgraphka')
-
-            path = pathlib.Path(target_path)
-            target_dir = path / attribute1
-            if not target_dir.is_dir():
-                target_dir.mkdir(parents=True, exist_ok=True)
 
             for feature2 in shp_layer:
                 geom2 = feature2.GetGeometryRef()
                 if geom1.Intersect(geom2):
                     intersection = geom2.Intersection(geom1)
 
+                    path = pathlib.Path(target_path)
+                    target_dir = path / attribute1
+                    if not target_dir.is_dir():
+                        target_dir.mkdir(parents=True, exist_ok=True)
+
                     target_shp_dir = target_dir / str(attribute1+'_'+os.path.basename(shp_path))
 
                     if not os.path.exists(str(target_shp_dir)):
                         print(str(target_shp_dir))
                         self.create_empty_shp(str(target_shp_dir),
-                                              self.prj,
                                               geometry=shp_geom_type)
 
                         target_source = self.driver.Open(str(target_shp_dir), 1)
@@ -216,7 +238,7 @@ class GridBuilder:
                     dstfeature.SetGeometry(intersection)
 
                     for i in range(layer_defn.GetFieldCount()):
-                        dstfeature.SetField(layer_defn.GetFieldDefn(i).GetNameRef(), feature2.GetField(i))
+                        dstfeature.SetField(layer_defn.GetFieldDefn(i).GetNameRef() , feature2.GetField(i))
                     target_layer.CreateFeature(dstfeature)
 
                     del dstfeature, target_layer, target_source
@@ -227,9 +249,8 @@ class GridBuilder:
 
     @classmethod
     def get_shapes_by_grid(cls, scale, source_path, target_dir):
-
-        """Common method to create new clipped and named shapefiles by source shapefile and scale grid.
-
+        """
+        Common method to create new clipped and named shapefiles by source shapefile and scale grid.
         :param scale: Scale denominator [1000000, 100000, 50000, 25000]
         :param source_path: Path of source shapefile - str.
         :param target_dir: Directory path for new shapefiles - str.
@@ -237,12 +258,13 @@ class GridBuilder:
         """
 
         driver = ogr.GetDriverByName("ESRI Shapefile")
+
         source = driver.Open(source_path)
         layer = source.GetLayer()
-        prj = layer.GetSpatialRef()
+        crs = layer.GetSpatialRef()
         extent = layer.GetExtent()
 
-        grid = GridBuilder(prj=prj, extent=extent, scale=scale)
+        grid = GridBuilder(crs=crs, extent=extent, scale=scale)
         grid_name = 'grid' + str(scale) + '.shp'
         grid_path = os.path.join(target_dir, grid_name)
 
@@ -251,7 +273,6 @@ class GridBuilder:
 
 
 class Nomenklatura:
-
     """
     Methods to create special names by russian mapping scale series.
     """
@@ -262,6 +283,12 @@ class Nomenklatura:
 
     @classmethod
     def scales(cls, scale):
+        """
+        Grid steps for each scale - {scale : (step_for_longitude, step_for_latitude)}
+        :param scale: int
+        :return: tuple.
+        """
+
         SCALES = {1000000: (6, 4),
                    100000: (30/60, 20/60),
                     50000: (15/60, 10/60),
@@ -270,6 +297,12 @@ class Nomenklatura:
         return SCALES[scale]
 
     def get_nomenklatura(self, scale):
+        """
+        Get method to create name for grid polygon by your scale.
+        :param scale: int
+        :return: func.
+        """
+
         scale_method = {1000000: self.m_1mln(),
                   100000: self.m_100k(),
                   50000: self.m_50k(),
@@ -277,6 +310,11 @@ class Nomenklatura:
         return scale_method[scale]
 
     def m_1mln(self):
+        """
+        Create names for polygons in 1 : 1 000 000
+        :return: Name for polygon and its boundary: list
+        """
+
         storage_1mln = { 0: 'A',
                          1: 'B',
                          2: 'C',
@@ -312,6 +350,11 @@ class Nomenklatura:
         return ['{}-{}'.format(storage_1mln[y_1mln], int(x_1mln)), list_boundary]
 
     def m_100k(self):
+        """
+        Create names for polygons in 1 : 100 000
+        :return: Name for polygon and its boundary: list
+        """
+
         name_1mln, boundary = self.m_1mln()
 
         y_line = (boundary[1]-self.y) // (20/60)
@@ -326,6 +369,11 @@ class Nomenklatura:
         return ['{}-{}'.format(name_1mln, int(n)), list_boundary]
 
     def m_50k(self):
+        """
+        Create names for polygons in 1 : 50 000
+        :return: Name for polygon and its boundary: list
+        """
+
         name_100k, boundary = self.m_100k()
 
         mid_x = (boundary[2] + boundary[0]) / 2
@@ -350,6 +398,11 @@ class Nomenklatura:
         return ['{}-{}'.format(name_100k, litera), list_boundary]
 
     def m_25k(self):
+        """
+        Create names for polygons in 1 : 25 000
+        :return: Name for polygon and its boundary: list
+        """
+
         name_50k, boundary = self.m_50k()
 
         mid_x = (boundary[2] + boundary[0]) / 2
@@ -375,6 +428,11 @@ class Nomenklatura:
 
 
 def main():
+    """
+    Main function for command line utility.
+    :return: result.
+    """
+
     def arguments():
         parser = argparse.ArgumentParser(description='Utility for clipping shapefile by scale grid')
         parser.add_argument('-scale',
