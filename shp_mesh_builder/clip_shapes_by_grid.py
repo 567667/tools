@@ -3,7 +3,7 @@ import os
 import math
 import pathlib
 import time
-from osgeo import ogr, osr
+from osgeo import gdal, ogr, osr
 
 
 class GridBuilder:
@@ -128,7 +128,7 @@ class GridBuilder:
             datasource = self.driver.CreateDataSource(path)
             target_crs = osr.SpatialReference()
             target_crs.ImportFromProj4("+proj=longlat +ellps=krass +towgs84=23.92,-141.27,-80.9,0,0.35,0.82,-0.12 +no_defs")
-            layer = datasource.CreateLayer('grid_layer',target_crs,geometry,options=['ENCODING=UTF-8'])
+            layer = datasource.CreateLayer('grid_layer', target_crs, geometry, options=['ENCODING=UTF-8'])
         else:
             raise ValueError("Path doesn't exist")
 
@@ -264,6 +264,7 @@ class GridBuilder:
         :param target_dir: Directory path for new shapefiles - str.
         :return: clipped shapefiles in named folders.
         """
+        gdal.PushErrorHandler('CPLQuietErrorHandler')
 
         driver = ogr.GetDriverByName("ESRI Shapefile")
 
@@ -463,7 +464,20 @@ def main():
 
     scale, shp, out_directory = arguments()
     cur_time = time.time()
-    GridBuilder.get_shapes_by_grid(int(scale[0]), str(shp[0]), str(out_directory[0]))
+
+    if os.path.splitext(shp[0])[1] == '.shp':
+        GridBuilder.get_shapes_by_grid(int(scale[0]),
+                                       str(shp[0]),
+                                       str(out_directory[0]))
+    elif not os.path.splitext(shp[0])[1]:
+        files = os.listdir(shp[0])
+        for file in files:
+            if os.path.splitext(file)[1] == '.shp':
+                GridBuilder.get_shapes_by_grid(int(scale[0]),
+                                               str(os.path.join(shp[0], file)),
+                                               str(out_directory[0]))
+
+
     print('Process time:', round(time.time() - cur_time, 2), 'sec')
 
 
