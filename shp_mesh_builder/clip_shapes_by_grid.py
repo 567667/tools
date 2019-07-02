@@ -123,6 +123,8 @@ class GridBuilder:
         :param nom_field: Write field "Razgraphka" or not to empty shapefile: bool.
         return: shapefile.
         """
+        if geometry == ogr.wkbMultiPoint:
+            geometry = ogr.wkbPoint
 
         if os.path.exists(os.path.dirname(path)):
             datasource = self.driver.CreateDataSource(path)
@@ -264,7 +266,7 @@ class GridBuilder:
         :param target_dir: Directory path for new shapefiles - str.
         :return: clipped shapefiles in named folders.
         """
-        gdal.PushErrorHandler('CPLQuietErrorHandler')
+        #gdal.PushErrorHandler('CPLQuietErrorHandler')
 
         driver = ogr.GetDriverByName("ESRI Shapefile")
 
