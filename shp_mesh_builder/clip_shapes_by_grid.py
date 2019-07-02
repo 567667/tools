@@ -479,7 +479,6 @@ def main():
                                                str(os.path.join(shp[0], file)),
                                                str(out_directory[0]))
 
-
     print('Process time:', round(time.time() - cur_time, 2), 'sec')
 
 
