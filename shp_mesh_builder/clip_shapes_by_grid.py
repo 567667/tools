@@ -266,7 +266,7 @@ class GridBuilder:
         :param target_dir: Directory path for new shapefiles - str.
         :return: clipped shapefiles in named folders.
         """
-        #gdal.PushErrorHandler('CPLQuietErrorHandler')
+        gdal.PushErrorHandler('CPLQuietErrorHandler')
 
         driver = ogr.GetDriverByName("ESRI Shapefile")
 
