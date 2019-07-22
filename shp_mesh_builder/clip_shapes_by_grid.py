@@ -90,7 +90,7 @@ class GridBuilder:
         :return: ogr.Geometry
         """
         target_crs = osr.SpatialReference()
-        target_crs.ImportFromProj4("+proj=longlat +ellps=krass +towgs84=23.92,-141.27,-80.9,0,0.35,0.82,-0.12 +no_defs")
+        target_crs.ImportFromProj4("+proj=longlat +datum=WGS84 +no_defs")
 
         transform = osr.CoordinateTransformation(source_crs, target_crs)
         geometry.Transform(transform)
@@ -106,7 +106,7 @@ class GridBuilder:
         """
 
         target_crs = osr.SpatialReference()
-        target_crs.ImportFromProj4("+proj=longlat +ellps=krass +towgs84=23.92,-141.27,-80.9,0,0.35,0.82,-0.12 +no_defs")
+        target_crs.ImportFromProj4("+proj=longlat +datum=WGS84 +no_defs")
 
         point = ogr.Geometry(ogr.wkbPoint)
         point.AddPoint(x, y)
@@ -129,7 +129,7 @@ class GridBuilder:
         if os.path.exists(os.path.dirname(path)):
             datasource = self.driver.CreateDataSource(path)
             target_crs = osr.SpatialReference()
-            target_crs.ImportFromProj4("+proj=longlat +ellps=krass +towgs84=23.92,-141.27,-80.9,0,0.35,0.82,-0.12 +no_defs")
+            target_crs.ImportFromProj4("+proj=longlat +datum=WGS84 +no_defs")
             layer = datasource.CreateLayer('grid_layer', target_crs, geometry, options=['ENCODING=UTF-8'])
         else:
             raise ValueError("Path doesn't exist")
@@ -440,7 +440,7 @@ class Nomenklatura:
 
 def main():
     """
-    Main function for command line utility. 3 required arguments - -scale, -source_shp, -out.
+    Main function for command line utility. 3 required arguments - -scale, -shp, -out.
     :return: result.
     """
 
