@@ -28,6 +28,7 @@ class GridBuilder:
         self.step_x = Nomenklatura.scales(scale)[0]
         self.step_y = Nomenklatura.scales(scale)[1]
         self.driver = driver
+        self.proj4 = "+proj=longlat +datum=WGS84 +no_defs"
 
     def grid_points(self):
         """
@@ -90,7 +91,7 @@ class GridBuilder:
         :return: ogr.Geometry
         """
         target_crs = osr.SpatialReference()
-        target_crs.ImportFromProj4("+proj=longlat +datum=WGS84 +no_defs")
+        target_crs.ImportFromProj4(self.proj4)
 
         transform = osr.CoordinateTransformation(source_crs, target_crs)
         geometry.Transform(transform)
@@ -106,7 +107,7 @@ class GridBuilder:
         """
 
         target_crs = osr.SpatialReference()
-        target_crs.ImportFromProj4("+proj=longlat +datum=WGS84 +no_defs")
+        target_crs.ImportFromProj4(self.proj4)
 
         point = ogr.Geometry(ogr.wkbPoint)
         point.AddPoint(x, y)
@@ -129,7 +130,7 @@ class GridBuilder:
         if os.path.exists(os.path.dirname(path)):
             datasource = self.driver.CreateDataSource(path)
             target_crs = osr.SpatialReference()
-            target_crs.ImportFromProj4("+proj=longlat +datum=WGS84 +no_defs")
+            target_crs.ImportFromProj4(self.proj4)
             layer = datasource.CreateLayer('grid_layer', target_crs, geometry, options=['ENCODING=UTF-8'])
         else:
             raise ValueError("Path doesn't exist")
